@@ -2,17 +2,20 @@
 
 import { dateFormat } from './util'
 
+/** 通用常量 **/
 const CONTAINER = 'life-chart'
 
 const TIME_BAR = 'TIME_BAR'
 const CALENDAR = 'CALENDAR'
 
-const ROWS_PER_COL = 21
+const TODAY = new Date()
 
-export function chartHeight() {
+/** 通用辅助函数 **/
+function chartHeight() {
   return (document.body.clientHeight - 64 - 24 - 24 - 24 - 24 - 24) * 0.75
 }
 
+/** 总入口 **/
 export function showChart(that, showData) {
   if (showData[0].chart) {
     if (showData[0].chart === TIME_BAR) {
@@ -24,6 +27,7 @@ export function showChart(that, showData) {
   return undefined
 }
 
+/** Time Bar 入口 **/
 export function showLifeTimeBar(that, showData) {
   const { Chart } = that.$g2
 
@@ -31,7 +35,7 @@ export function showLifeTimeBar(that, showData) {
     let start = obj.date
     let end = obj.till
     if (end === null || end === undefined) {
-      end = new Date()
+      end = TODAY
     }
     if (start === end) {
       start = `${start} 00:00:00`
@@ -74,80 +78,152 @@ export function showLifeTimeBar(that, showData) {
   return chart
 }
 
+/** Calendar 辅助常量 **/
+// G2 着色
+const CALENDAR_COLOR_LIGHT = '#BAE7FF'
+const CALENDAR_COLOR_MID = '#1890FF'
+const CALENDAR_COLOR_DARK = '#0050B3'
+const CALENDAR_COLORS = `${CALENDAR_COLOR_LIGHT}-${CALENDAR_COLOR_MID}-${CALENDAR_COLOR_DARK}`
+const DEFAULT_LINE_WIDTH = 1
+const BOARDER_LINE_WIDTH = DEFAULT_LINE_WIDTH * 2
+const BOARDER_STROKE = '#404040'
+
+// 计算日历图布局
+const ROWS_PER_COL = 21
+const RATIO = 3 // 如果比例过于不协调，就每次加 7 个格子
+const STEP = 7
+
+/** Calendar 辅助函数 **/
+function dateInterval(begin, end = TODAY) {
+  return (end - begin) / (86400 * 1000) // 计算有多少天
+}
+
+function sameYear(a, b) {
+  return a.substring(0, 4) === b.substring(0, 4)
+}
+
+function sameMonth(a, b) {
+  return a.substring(5, 7) === b.substring(5, 7)
+}
+
+/** Calendar 入口 **/
 export function showLifeCalendar(that, showData) {
   const { Chart } = that.$g2
   const registerShape = that.$g2.registerShape
 
-  const commits = {}
-  let minDate = '9999-12-31'
+  // 专门有一个日期对象可以随便修改，避免反复 new Date()
+  let mutableDate
 
+  // 找到最小日期
+  let minDateS = '9999-12-31'
   showData.forEach((obj) => {
-    const start = obj.date
-    let end = obj.till
-    if (end === null || end === undefined) {
-      end = new Date()
-    } else {
-      end = new Date(end)
-    }
-    let cursor = new Date(start)
-    while (cursor <= end) {
-      const s = dateFormat(cursor)
-      if (s < minDate) {
-        minDate = s
-      }
-      if (!(s in commits)) {
-        commits[s] = 0
-      }
-      commits[s] += 1
-      // 加一天
-      cursor = new Date(cursor.setDate(cursor.getDate() + 1))
+    if (obj.date < minDateS) {
+      minDateS = obj.date
     }
   })
+  const minDate = new Date(minDateS)
 
-  const data = []
-  let first = true
-  let cursor = new Date(minDate)
-  const today = new Date()
-  let day = 0
+  const intervals = dateInterval(minDate)
 
   // 避免太细的格子，所以如果按缺省 ROWS_PER_COL 会导致列数太多，就要调整
-  const RATIO = 3 // 如果比例过于不协调，就每次加 7 个格子
-  const STEP = 7
-  const intervals = (today - cursor) / (86400 * 1000) // 计算有多少天
-  let rowsPerCol = ROWS_PER_COL // 从缺省值开始，应该可以解决大部分问题
-  while (intervals / rowsPerCol > RATIO * rowsPerCol) {
-    rowsPerCol += STEP
+  const rowsPerCol =
+    ROWS_PER_COL * ROWS_PER_COL * RATIO >= intervals
+      ? ROWS_PER_COL
+      : Math.ceil(Math.sqrt(intervals / RATIO) / STEP) * STEP
+
+  // 初始化前缀和，同时缓存日期信息
+  // 加 1 是因为 TODAY - TODAY == 0 但是数组长度是 1
+  // 另一个 1 是因为最后要做 prefixSum[b + 1]--
+  const prefixSum = []
+  const dateStringCache = []
+  const dateStringIndex = {}
+  mutableDate = new Date(minDateS)
+  for (let i = 0; i < intervals + 2; i++) {
+    prefixSum.push(0)
+    const dateString = dateFormat(mutableDate)
+    dateStringCache.push(dateString)
+    dateStringIndex[dateString] = i
+    mutableDate.setDate(mutableDate.getDate() + 1)
+  }
+  showData.forEach((obj) => {
+    prefixSum[dateStringIndex[obj.date] - dateStringIndex[minDateS]]++
+
+    let end = obj.till
+    if (end === null || end === undefined) {
+      end = dateFormat(TODAY)
+    }
+    prefixSum[dateStringIndex[end] - dateStringIndex[minDateS] + 1]--
+  })
+
+  // 处理分割线
+  const monthLineBottom = []
+  const monthLineRight = []
+  const yearLineBottom = []
+  const yearLineRight = []
+  for (let i = 0; i < intervals + 1; i++) {
+    const thisDate = dateStringCache[i]
+
+    if (i < intervals) {
+      const bottomDate = dateStringCache[i + 1]
+      monthLineBottom.push(!sameMonth(thisDate, bottomDate))
+      yearLineBottom.push(!sameYear(thisDate, bottomDate))
+    }
+
+    if (i + rowsPerCol - 1 < intervals) {
+      const rightDate = dateStringCache[i + rowsPerCol]
+      monthLineRight.push(!sameMonth(thisDate, rightDate))
+      yearLineRight.push(!sameYear(thisDate, rightDate))
+    } else if (i < intervals) {
+      const bottomDate = dateStringCache[i + 1]
+      monthLineRight.push(!sameMonth(thisDate, bottomDate))
+      yearLineRight.push(!sameYear(thisDate, bottomDate))
+    }
   }
 
-  while (cursor <= today) {
-    const s = dateFormat(cursor)
-    // day 是一周的第几天，针对当月来说
-    // week 是第几周，针对所有数据来说，相当于图表的第几列
-    if (first) {
-      // 先强制 push 一个 0 次提交的，以避免所有天都有 commit 的情况下，热力图都是最浅颜色的问题
-      cursor = new Date(cursor.setDate(cursor.getDate() - 1))
-      data.push({
-        date: dateFormat(cursor),
-        commits: 0,
-        month: cursor.getMonth(),
-        day: Math.floor(day % rowsPerCol),
-        week: Math.floor(day / rowsPerCol),
-      })
-      day++
-      cursor = new Date(cursor.setDate(cursor.getDate() + 1))
-      first = false
-    }
+  // 如果跨年了就只画年的分界线，如果没有跨年就画月的分界线
+  const shouldDrawYearLine =
+    yearLineBottom.filter((e) => {
+      return e
+    }).length > 0 ||
+    yearLineRight.filter((e) => {
+      return e
+    }).length > 0
+
+  const data = []
+
+  // 先强制记录一个 0，以避免所有天都是最小值的情况下，热力图都是最浅颜色的问题
+  mutableDate = new Date(minDateS)
+  mutableDate = new Date(mutableDate.setDate(mutableDate.getDate() - 1))
+  const dummyDateS = dateFormat(mutableDate)
+  data.push({
+    date: dummyDateS,
+    counts: 0,
+    month: mutableDate.getMonth(),
+    day: 0,
+    week: 0,
+    bottom: shouldDrawYearLine
+      ? !sameYear(dummyDateS, minDateS)
+      : !sameMonth(dummyDateS, minDateS),
+    right: shouldDrawYearLine
+      ? !sameYear(dummyDateS, dateStringCache[rowsPerCol])
+      : !sameMonth(dummyDateS, dateStringCache[rowsPerCol]),
+  })
+
+  let sum = 0
+  let day = 1
+  for (let i = 0; i < intervals; i++) {
+    const s = dateStringCache[i]
+    sum += prefixSum[i]
     data.push({
       date: s,
-      // 获取相同日期有多少个，就是当日打卡次数
-      commits: s in commits ? commits[s] : 0,
-      month: cursor.getMonth(),
+      counts: sum,
+      month: parseInt(s.substring(5, 7)) - 1, // Date.getMonth() 返回 0 - 11，所以取出日期变成数值以后要减去 1
       day: Math.floor(day % rowsPerCol),
       week: Math.floor(day / rowsPerCol),
+      bottom: shouldDrawYearLine ? yearLineBottom[i] : monthLineBottom[i],
+      right: shouldDrawYearLine ? yearLineRight[i] : monthLineRight[i],
     })
-    // 加一天
     day++
-    cursor = new Date(cursor.setDate(cursor.getDate() + 1))
   }
 
   registerShape('polygon', 'boundary-polygon', {
@@ -155,7 +231,7 @@ export function showLifeCalendar(that, showData) {
       const group = container.addGroup()
       const attrs = {
         stroke: '#fff',
-        lineWidth: 1,
+        lineWidth: DEFAULT_LINE_WIDTH,
         fill: cfg.color,
       }
       const points = cfg.points
@@ -171,31 +247,31 @@ export function showLifeCalendar(that, showData) {
         attrs,
       })
 
-      if (cfg.data.lastWeek) {
-        const linePath = [
-          ['M', points[2].x, points[2].y],
-          ['L', points[3].x, points[3].y],
-        ]
-        // 最后一周的多边形添加右侧边框
+      // 多边形添加右侧边框
+      if (cfg.data.right) {
         group.addShape('path', {
           attrs: {
-            path: this.parsePath(linePath),
-            lineWidth: 4,
-            stroke: '#404040',
+            path: this.parsePath([
+              ['M', points[2].x, points[2].y],
+              ['L', points[3].x, points[3].y],
+            ]),
+            lineWidth: BOARDER_LINE_WIDTH * 2,
+            stroke: BOARDER_STROKE,
           },
         })
-        if (cfg.data.lastDay) {
-          group.addShape('path', {
-            attrs: {
-              path: this.parsePath([
-                ['M', points[1].x, points[1].y],
-                ['L', points[2].x, points[2].y],
-              ]),
-              lineWidth: 4,
-              stroke: '#404040',
-            },
-          })
-        }
+      }
+      // 多边形添加底部边框
+      if (cfg.data.bottom) {
+        group.addShape('path', {
+          attrs: {
+            path: this.parsePath([
+              ['M', points[1].x, points[1].y],
+              ['L', points[2].x, points[2].y],
+            ]),
+            lineWidth: BOARDER_LINE_WIDTH * 2,
+            stroke: BOARDER_STROKE,
+          },
+        })
       }
 
       return group
@@ -203,13 +279,13 @@ export function showLifeCalendar(that, showData) {
   })
 
   // Step 1: 创建 Chart 对象
-  // Step 2: 载入数据源
   const chart = new Chart({
     container: CONTAINER,
     autoFit: true,
     height: chartHeight(),
   })
 
+  // Step 2: 载入数据源
   chart.data(data)
 
   // Step 3：创建图形语法，绘制柱状图
@@ -263,10 +339,11 @@ export function showLifeCalendar(that, showData) {
     showMarkers: false,
   })
   chart.coordinate().reflect('y')
+
   chart
     .polygon()
     .position('week*day*date')
-    .color('commits', '#BAE7FF-#1890FF-#0050B3')
+    .color('counts', CALENDAR_COLORS)
     .shape('boundary-polygon')
 
   // Step 4: 渲染图表
