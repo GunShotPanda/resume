@@ -1,0 +1,23 @@
+{
+  "updated": "2020-12-14",
+  "deployDir": "/",
+  "link": "",
+  "blog": "",
+  "gitlab": "",
+  "src": {
+    "certificate": "/data/certificate/",
+    "photo": "/data/photo/",
+    "project": "/data/project/",
+    "subject": "/data/subject/",
+    "research": "/data/research/",
+    "coding": "/data/coding/",
+    "exhibit": "/data/photo/",
+    "food": "/data/food/",
+    "honor": "/data/honor/",
+    "footprint": "/data/footprint/"
+  },
+  "token": {
+    "gaode": "atokenxxxxxxxx",
+    "mapbox": "pk.eyxxx.xxx_x_XXXX"
+  }
+}

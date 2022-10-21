@@ -89,6 +89,3 @@ sw.*
 # Vim swap files
 *.swp
 
-# User data
-assets/data/
-static/data/
